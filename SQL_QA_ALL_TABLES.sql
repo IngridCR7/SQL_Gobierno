@@ -1,4 +1,9 @@
--- Crear una tabla temporal para almacenar los recuentos de valores únicos con esquema
+-- Crear una tabla temporal para almacenar los recuentos de valores Ãºnicos con esquema
+IF OBJECT_ID('tempdb..#ValoresUnicos') IS NOT NULL
+BEGIN
+    DROP TABLE #ValoresUnicos
+END
+
 CREATE TABLE #ValoresUnicos (
     SchemaName NVARCHAR(128),
     TableName NVARCHAR(128),
@@ -6,7 +11,7 @@ CREATE TABLE #ValoresUnicos (
     UniqueValuesCount INT
 )
 
--- Obtener recuentos de valores únicos por columna en cada tabla
+-- Obtener recuentos de valores Ãºnicos por columna en cada tabla
 DECLARE @SchemaName NVARCHAR(128)
 DECLARE @TableName NVARCHAR(128)
 DECLARE @ColumnName NVARCHAR(128)
@@ -46,6 +51,11 @@ CLOSE TableCursor
 DEALLOCATE TableCursor
 
 -- Consulta para obtener la cantidad de filas por tabla en una base de datos
+IF OBJECT_ID('tempdb..#ConteoFilas') IS NOT NULL
+BEGIN
+    DROP TABLE #ConteoFilas
+END
+
 CREATE TABLE #ConteoFilas (
     Esquema NVARCHAR(255),
     Tabla NVARCHAR(255),
@@ -80,7 +90,13 @@ END
 CLOSE table_cursor
 DEALLOCATE table_cursor
 
+
 -- Crear una tabla temporal para almacenar los ejemplos de cada columna en cada tabla
+IF OBJECT_ID('tempdb..#Examples') IS NOT NULL
+BEGIN
+    DROP TABLE #Examples
+END
+
 CREATE TABLE #Examples (
     SchemaName NVARCHAR(100),
     TableName NVARCHAR(100),
@@ -93,7 +109,6 @@ DECLARE @TableName_2 NVARCHAR(100)
 DECLARE @ColumnName_2 NVARCHAR(100)
 DECLARE @SQLQuery_2 NVARCHAR(MAX)
 
--- Consultar todas las tablas en la base de datos con su esquema
 DECLARE table_cursor CURSOR FOR
 SELECT TABLE_SCHEMA, TABLE_NAME
 FROM INFORMATION_SCHEMA.TABLES
@@ -103,7 +118,6 @@ OPEN table_cursor
 
 FETCH NEXT FROM table_cursor INTO @SchemaName_2, @TableName_2
 
--- Recorrer cada tabla y obtener un ejemplo de cada campo
 WHILE @@FETCH_STATUS = 0
 BEGIN
     DECLARE column_cursor CURSOR FOR
@@ -117,7 +131,18 @@ BEGIN
 
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        SET @SQLQuery_2 = N'SELECT TOP 1 @ExampleValue = [' + @ColumnName_2 + N'] FROM [' + @SchemaName_2 + N'].[' + @TableName_2 + N']'
+        SET @SQLQuery_2 = N'
+            DECLARE @TempTable TABLE (ExampleValue NVARCHAR(MAX))
+            INSERT INTO @TempTable
+            SELECT [' + @ColumnName_2 + N'] FROM [' + @SchemaName_2 + N'].[' + @TableName_2 + N']
+            WHERE [' + @ColumnName_2 + N'] IS NOT NULL
+            
+            DECLARE @RowCount INT = (SELECT COUNT(*) FROM @TempTable)
+            IF @RowCount > 0
+                SELECT TOP 1 @ExampleValue = ExampleValue FROM @TempTable
+            ELSE
+                SELECT @ExampleValue = NULL
+        '
         DECLARE @ExampleColumn NVARCHAR(MAX)
         
         EXEC sp_executesql @SQLQuery_2, N'@ExampleValue NVARCHAR(MAX) OUTPUT', @ExampleValue = @ExampleColumn OUTPUT
