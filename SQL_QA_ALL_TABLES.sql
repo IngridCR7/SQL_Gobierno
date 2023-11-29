@@ -17,6 +17,7 @@ DECLARE @TableName NVARCHAR(128)
 DECLARE @ColumnName NVARCHAR(128)
 DECLARE @SQLQuery NVARCHAR(MAX)
 
+-- Definir un cursor para iterar a través de las tablas y columnas    
 DECLARE TableCursor CURSOR FOR
 SELECT 
     s.name AS SchemaName,
@@ -37,11 +38,12 @@ FETCH NEXT FROM TableCursor INTO @SchemaName, @TableName, @ColumnName
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
+    -- Construir la consulta dinámica para obtener el recuento de valores únicos
     SET @SQLQuery = 'INSERT INTO #ValoresUnicos (SchemaName, TableName, ColumnName, UniqueValuesCount) ' +
                     'SELECT ''' + @SchemaName + ''', ''' + @TableName + ''', ''' + @ColumnName + ''', ' +
                     'COUNT(DISTINCT ' + QUOTENAME(@ColumnName) + ') ' +
                     'FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName)
-
+    -- Ejecutar la consulta dinámica
     EXEC sp_executesql @SQLQuery
 
     FETCH NEXT FROM TableCursor INTO @SchemaName, @TableName, @ColumnName
@@ -66,6 +68,7 @@ DECLARE @schema_name NVARCHAR(255)
 DECLARE @table_name NVARCHAR(255)
 DECLARE @sql NVARCHAR(MAX)
 
+-- Definir un cursor para iterar a través de los esquemas y tablas
 DECLARE table_cursor CURSOR FOR
 SELECT 
     s.name AS Esquema,
@@ -81,6 +84,7 @@ FETCH NEXT FROM table_cursor INTO @schema_name, @table_name
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
+    -- Construir la consulta dinámica para obtener el recuento de filas
     SET @sql = 'INSERT INTO #ConteoFilas (Esquema, Tabla, CantidadFilas) SELECT ''' + @schema_name + ''', ''' + @table_name + ''', COUNT(*) FROM ' + QUOTENAME(@schema_name) + '.' + QUOTENAME(@table_name)
     EXEC sp_executesql @sql
 
@@ -109,6 +113,7 @@ DECLARE @TableName_2 NVARCHAR(100)
 DECLARE @ColumnName_2 NVARCHAR(100)
 DECLARE @SQLQuery_2 NVARCHAR(MAX)
 
+-- Definir un cursor para iterar a través de las tablas y columnas utilizando INFORMATION_SCHEMA
 DECLARE table_cursor CURSOR FOR
 SELECT TABLE_SCHEMA, TABLE_NAME
 FROM INFORMATION_SCHEMA.TABLES
@@ -131,6 +136,7 @@ BEGIN
 
     WHILE @@FETCH_STATUS = 0
     BEGIN
+    -- Construir la consulta dinámica para obtener el ejemplo de cada columna omitiendo los nulls
         SET @SQLQuery_2 = N'
             DECLARE @TempTable TABLE (ExampleValue NVARCHAR(MAX))
             INSERT INTO @TempTable
@@ -144,9 +150,11 @@ BEGIN
                 SELECT @ExampleValue = NULL
         '
         DECLARE @ExampleColumn NVARCHAR(MAX)
-        
+
+        -- Ejecutar la consulta dinámica y obtener el resultado
         EXEC sp_executesql @SQLQuery_2, N'@ExampleValue NVARCHAR(MAX) OUTPUT', @ExampleValue = @ExampleColumn OUTPUT
 
+        -- Insertar el ejemplo en la tabla temporal
         INSERT INTO #Examples (SchemaName, TableName, ColumnName, ExampleValue)
         VALUES (@SchemaName_2, @TableName_2, @ColumnName_2, @ExampleColumn)
 
