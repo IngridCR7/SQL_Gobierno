@@ -52,6 +52,7 @@ END
 CLOSE TableCursor
 DEALLOCATE TableCursor
 
+--------------------------------------------------------------------------------------------------
 -- Consulta para obtener la cantidad de filas por tabla en una base de datos
 IF OBJECT_ID('tempdb..#ConteoFilas') IS NOT NULL
 BEGIN
@@ -94,7 +95,8 @@ END
 CLOSE table_cursor
 DEALLOCATE table_cursor
 
-
+    
+--------------------------------------------------------------------------------------------------
 -- Crear una tabla temporal para almacenar los ejemplos de cada columna en cada tabla
 IF OBJECT_ID('tempdb..#Examples') IS NOT NULL
 BEGIN
@@ -170,6 +172,8 @@ END
 CLOSE table_cursor
 DEALLOCATE table_cursor
 
+
+--------------------------------------------------------------------------------------------------
 -- Mostrar los resultados finales
 SELECT 
     U.SchemaName,
