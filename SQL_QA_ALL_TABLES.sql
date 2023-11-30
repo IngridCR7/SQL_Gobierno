@@ -5,16 +5,16 @@ BEGIN
 END
 
 CREATE TABLE #ValoresUnicos (
-    SchemaName NVARCHAR(128),
-    TableName NVARCHAR(128),
-    ColumnName NVARCHAR(128),
+    SchemaName NVARCHAR(255),
+    TableName NVARCHAR(255),
+    ColumnName NVARCHAR(255),
     UniqueValuesCount INT
 )
 
 -- Obtener recuentos de valores únicos por columna en cada tabla
-DECLARE @SchemaName NVARCHAR(128)
-DECLARE @TableName NVARCHAR(128)
-DECLARE @ColumnName NVARCHAR(128)
+DECLARE @SchemaName NVARCHAR(255)
+DECLARE @TableName NVARCHAR(255)
+DECLARE @ColumnName NVARCHAR(255)
 DECLARE @SQLQuery NVARCHAR(MAX)
 
 -- Definir un cursor para iterar a través de las tablas y columnas    
@@ -104,15 +104,15 @@ BEGIN
 END
 
 CREATE TABLE #Examples (
-    SchemaName NVARCHAR(100),
-    TableName NVARCHAR(100),
-    ColumnName NVARCHAR(100),
+    SchemaName NVARCHAR(255),
+    TableName NVARCHAR(255),
+    ColumnName NVARCHAR(255),
     ExampleValue NVARCHAR(MAX)
 )
 
-DECLARE @SchemaName_2 NVARCHAR(100)
-DECLARE @TableName_2 NVARCHAR(100)
-DECLARE @ColumnName_2 NVARCHAR(100)
+DECLARE @SchemaName_2 NVARCHAR(255)
+DECLARE @TableName_2 NVARCHAR(255)
+DECLARE @ColumnName_2 NVARCHAR(255)
 DECLARE @SQLQuery_2 NVARCHAR(MAX)
 
 -- Definir un cursor para iterar a través de las tablas y columnas utilizando INFORMATION_SCHEMA
