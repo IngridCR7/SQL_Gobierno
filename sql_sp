@@ -1,0 +1,185 @@
+USE [WEB_BXD2]
+GO
+/****** Object:  StoredProcedure [dbo].[SP_AsignaLiderColaborador]    Script Date: 11/12/2023 15:32:02 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[SP_AsignaLiderColaborador] @ANIO_EJERCICIO INT
+as
+BEGIN
+--DECLARE @ANIO_EJERCICIO INT = 2023
+-- SE OBTIENE EL CO_PERIODO MAXIMO EN LA BASE DE ACTIVOS, DEL EJERCICIO ACTUAL Y HASTA ENERO DE AÑO SIGUIENTE
+DECLARE @CO_PERIODO_MAX INT = (SELECT MAX(CO_PERIODO) FROM CONTROL_PROCESOS_COMP..HM_005_ACTIVOS_UGI WHERE CO_PERIODO / 100 = @ANIO_EJERCICIO OR CO_PERIODO = (@ANIO_EJERCICIO * 100 + 101))
+
+
+--LIMPIAMOS LA BASE DE LIDERES DEL EJERCICIO ACTUAL PARA 
+DELETE WEB_BXD2..LIDERES_ELEGIBLES WHERE ANIO_EJERCICIO = @ANIO_EJERCICIO
+
+INSERT INTO WEB_BXD2..LIDERES_ELEGIBLES
+SELECT 
+@ANIO_EJERCICIO ANIO_EJERCICIO,A.CodSIGA, A.CodDivision,A.CodArea,A.CodServicio,A.CodUniOrg,A.GerenciaCentral,A.Division,A.Area,A.Servicio,A.UnidadOrganizativa,A.TIPO_LIDER
+,A.CodFuncion,A.Función
+,CASE WHEN A.CodFuncion = 28156 THEN 'S1' ELSE D.GS END
+, C.NIVEL NIVEL_ORGANIZACIONAL
+FROM CONTROL_PROCESOS_COMP..HM_005_ACTIVOS_UGI  A
+LEFT JOIN WEB_IAS..AS_PPOSE C ON A.CO_PERIODO = C.co_periodo AND A.CodUniOrg = C.COD_UO
+LEFT JOIN CONTROL_PROCESOS_COMP..HM_002_ESTRUCTURASALARIAL D ON A.CodFuncion = D.CO_FUNCION AND A.CO_PERIODO = D.CO_PERIODO
+WHERE A.CO_PERIODO = @CO_PERIODO_MAX 
+AND (A.TIPO_LIDER IN ('Gerente de División','Gerente de Área','Tribe Leader','COE Leader')  OR CodSIGA IN (0) ) -- SE REEMPLAZA EL 0 POR LAS CODSIGA DE LOS NUEVOS GERENTES
+AND CodSIGA NOT IN (0) -- SE REEMPLAZA EL 0 POR LOS CODSIGA QUE SE QUIERE RETIRAR
+
+
+-- SE AGREGA LIDERES A DEMANDA
+
+
+--SE OBTIENE LA BASE DE COLABORADORES ELEGIBLES
+DROP TABLE IF EXISTS #BaseColaboradoresConsolidado
+SELECT A.CodSIGA,
+A.CodUniOrg,
+A.CodFuncion,
+A.Función,
+D.GS,
+A.Division,
+A.Area,
+Servicio,
+UnidadOrganizativa,
+--CASE WHEN a.CodSIGA = C.NUM_LID then c.NIVEL else c.NIVEL + 1 end as NuevoNivel,
+C.NIVEL
+,B.CodFuncion CodFuncionOCT,B.CodUniOrg CodUniOrgOCT,B.GradoSalarial GradoSalarialOCT
+,0 CodSigaCalibrador,'Lineamiento establecido' NombreLineamiento,a.GerenciaCentral
+into #BaseColaboradoresConsolidado
+FROM CONTROL_PROCESOS_COMP..HM_005_ACTIVOS_UGI A
+INNER JOIN WEB_BXD2..BASE_ELEGIBLES B ON A.CodSIGA = B.CODSIGA 
+LEFT JOIN WEB_IAS..AS_PPOSE C ON A.CO_PERIODO = C.co_periodo AND A.CodUniOrg = C.COD_UO
+LEFT JOIN CONTROL_PROCESOS_COMP..HM_002_ESTRUCTURASALARIAL D ON A.CodFuncion = D.CO_FUNCION AND A.CO_PERIODO = D.CO_PERIODO
+WHERE B.ELEGIBRE_CALIBRACION = 'si'AND A.CO_PERIODO = @CO_PERIODO_MAX
+
+
+/* --------------------------------------------------*/
+/* ---------- Inicio de Lineamientos ---------- */
+
+-- Fase 1 : Se asigna al líder basado en la unidad organizativa del colaborador en el momento de la calibración (01.10.2022)
+
+drop table if exists #BASE_1
+select *,0 NUM_LID_AUT into #BASE_1 from WEB_IAS..AS_PPOSE where co_periodo = 100000 + @ANIO_EJERCICIO
+
+	
+		--GENERAMOS BASE DE LIDERES AUTONOMIA Y PLANIFICADOR------------------------------------------
+		DROP TABLE IF EXISTS #BASE_AUTONOMIA 
+		select CodSIGA NUM_LID_AUTONOMIA into #BASE_AUTONOMIA from WEB_BXD2..LIDERES_ELEGIBLES
+		-----------------------------------------------------------------------------------------------
+		
+		--ACTUALIZACION LIDER AUTONOMIA Y PLANIFICADOR CON EL CODUO DIRECTO----------------------------
+		UPDATE A
+		SET A.NUM_LID_AUT = B.NUM_LID_AUTONOMIA
+		FROM #BASE_1 A 
+		INNER JOIN #BASE_AUTONOMIA B ON A.NUM_LID = B.NUM_LID_AUTONOMIA
+		WHERE A.NUM_LID_AUT = 0
+		-----------------------------------------------------------------------------------------------
+		
+		--BUCLE PARA ACTUALIZAR EL LIDER CON AUTONOMIA----------------------------
+		DECLARE @CUP_B INT = 0,@NIVEL_B INT ,@NU_ORDEN_B INT ,@NUM_LID_AUT INT  = 0,@INI_B INT = 1,@FIN_B INT
+
+		DROP TABLE IF EXISTS #BASE_4
+		SELECT *,ROW_NUMBER() OVER (ORDER BY NU_ORDEN) NU_ORDEN_2 INTO #BASE_4 FROM #BASE_1 WHERE NUM_LID_AUT = 0 AND NIVEL>1
+		SET @FIN_B = (SELECT MAX(NU_ORDEN_2) FROM #BASE_4) 
+		WHILE(@INI_B <= @FIN_B)
+		BEGIN
+			
+			SELECT @NU_ORDEN_B = NU_ORDEN, @CUP_B = COD_UO_PADRE, @NUM_LID_AUT =NUM_LID_AUT, @NIVEL_B = NIVEL FROM #BASE_4 WHERE NU_ORDEN_2 = @INI_B
+			
+			WHILE( ISNULL(@NUM_LID_AUT,0)= 0 AND @NIVEL_B > 1 )
+				BEGIN
+				
+					SELECT @NUM_LID_AUT = NUM_LID_AUT FROM #BASE_1 WHERE COD_UO = @CUP_B AND NUM_LID_AUT >0
+					SELECT @CUP_B = COD_UO_PADRE,@NIVEL_B = NIVEL FROM #BASE_1 WHERE COD_UO = @CUP_B 
+				END
+				
+				UPDATE #BASE_1
+				SET NUM_LID_AUT = @NUM_LID_AUT
+				WHERE NU_ORDEN = @NU_ORDEN_B
+
+			SET @INI_B = @INI_B + 1
+
+		END
+
+
+UPDATE A
+SET A.CodSigaCalibrador = B.NUM_LID_AUT, A.NombreLineamiento = 'Fase 1'
+FROM #BaseColaboradoresConsolidado A
+INNER JOIN #BASE_1 B ON A.CodUniOrgOCT = B.COD_UO
+WHERE A.CodSIGA <> B.NUM_LID_AUT AND B.NUM_LID_AUT > 0 AND A.CodSigaCalibrador = 0
+
+---	Fase 2 : Se asigna al líder basado en al jefe superior del colaborador a corte 01.10.2022
+
+UPDATE A
+SET a.CodSigaCalibrador = b.codsigasuperior, A.NombreLineamiento = 'Fase 2'
+FROM #BaseColaboradoresConsolidado A
+INNER JOIN WEB_BXD2..BASE_ELEGIBLES b on a.CodSIGA = b.CODSIGA
+INNER JOIN WEB_BXD2..LIDERES_ELEGIBLES C ON B.codsigasuperior = C.CodSIGA
+WHERE A.CodSIGA <> B.codsigasuperior AND A.CodSigaCalibrador = 0
+
+--Fase 3 : Se asigna al líder basado en la unidad organizativa del colaborador al 01.01.2023
+drop table if exists #BASE_2
+select *,0 NUM_LID_AUT into #BASE_2 from WEB_IAS..AS_PPOSE where co_periodo = @CO_PERIODO_MAX
+
+UPDATE A
+		SET A.NUM_LID_AUT = B.NUM_LID_AUTONOMIA
+		FROM #BASE_2 A 
+		INNER JOIN #BASE_AUTONOMIA B ON A.NUM_LID = B.NUM_LID_AUTONOMIA
+		WHERE A.NUM_LID_AUT = 0
+		-----------------------------------------------------------------------------------------------
+
+		--BUCLE PARA ACTUALIZAR EL LIDER CON AUTONOMIA----------------------------
+		DECLARE @CUP_B_2 INT = 0,@NIVEL_B_2 INT ,@NU_ORDEN_B_2 INT ,@NUM_LID_AUT_2 INT  = 0,@INI_B_2 INT = 1,@FIN_B_2 INT
+
+		DROP TABLE IF EXISTS #BASE_5
+		SELECT *,ROW_NUMBER() OVER (ORDER BY NU_ORDEN) NU_ORDEN_2 INTO #BASE_5 FROM #BASE_2 WHERE NUM_LID_AUT = 0 AND NIVEL>1
+		SET @FIN_B_2 = (SELECT MAX(NU_ORDEN_2) FROM #BASE_5) 
+		WHILE(@INI_B_2 <= @FIN_B_2)
+		BEGIN
+			
+			SELECT @NU_ORDEN_B_2 = NU_ORDEN, @CUP_B_2 = COD_UO_PADRE, @NUM_LID_AUT_2 =NUM_LID_AUT, @NIVEL_B_2 = NIVEL FROM #BASE_5 WHERE NU_ORDEN_2 = @INI_B_2
+			
+			WHILE( ISNULL(@NUM_LID_AUT_2,0)= 0 AND @NIVEL_B_2 > 1 )
+				BEGIN
+				
+					SELECT @NUM_LID_AUT_2 = NUM_LID_AUT FROM #BASE_2 WHERE COD_UO = @CUP_B_2 AND NUM_LID_AUT >0
+					SELECT @CUP_B_2 = COD_UO_PADRE,@NIVEL_B_2 = NIVEL FROM #BASE_2 WHERE COD_UO = @CUP_B_2 
+				END
+				
+				UPDATE #BASE_2
+				SET NUM_LID_AUT = @NUM_LID_AUT_2
+				WHERE NU_ORDEN = @NU_ORDEN_B_2
+
+			SET @INI_B_2 = @INI_B_2 + 1
+
+		END
+
+UPDATE A
+SET A.CodSigaCalibrador = B.NUM_LID_AUT, A.NombreLineamiento = 'Fase 3'
+FROM #BaseColaboradoresConsolidado A
+INNER JOIN #BASE_2 B ON A.CodUniOrg = B.COD_UO
+WHERE A.CodSIGA <> B.NUM_LID_AUT AND B.NUM_LID_AUT > 0 AND A.CodSigaCalibrador = 0
+
+
+--	Fase 4 : Se asigna al líder basado en al jefe superior del colaborador a corte 01.01.2023
+UPDATE A
+SET a.CodSigaCalibrador = b.codsigasuperior, A.NombreLineamiento = 'Fase 4'
+FROM #BaseColaboradoresConsolidado A
+INNER JOIN CONTROL_PROCESOS_COMP..HM_005_ACTIVOS_UGI b on a.CodSIGA = b.CODSIGA AND B.CO_PERIODO = @CO_PERIODO_MAX
+INNER JOIN WEB_BXD2..LIDERES_ELEGIBLES C ON B.codsigasuperior = C.CodSIGA
+WHERE A.CodSIGA <> B.codsigasuperior AND A.CodSigaCalibrador = 0
+
+
+/* ---------- Fin de Lineamientos ---------- */
+/* --------------------------------------------------*/
+
+DELETE WEB_BXD2..ColaboradorLiderAsignado WHERE anio_ejercicio = @ANIO_EJERCICIO
+
+INSERT INTO WEB_BXD2..ColaboradorLiderAsignado
+SELECT @ANIO_EJERCICIO anio_ejercicio,* 
+FROM #BaseColaboradoresConsolidado 
+
+END
